@@ -25,19 +25,12 @@ jobs:
         run: |
           mkdir dist
           cp target/release/keyprint target/release/gui README.md LICENSE dist/
-          cp -r languages dist/
           tar -C dist -czf keyprint-linux-x86_64.tar.gz .
       - name: Build AppImage
         run: |
           wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           chmod +x linuxdeploy-x86_64.AppImage
           export ARCH=x86_64
-          # languages/ next to the executable inside the AppDir, matching
-          # the exe-relative lookup — languages are embedded regardless, but
-          # this keeps the "drop a file, no rebuild" story visible/usable.
-          # Placed before linuxdeploy runs so it ends up in the squashfs.
-          mkdir -p AppDir/usr/bin
-          cp -r languages AppDir/usr/bin/
           ./linuxdeploy-x86_64.AppImage --appimage-extract-and-run \
             --appdir AppDir \
             -e target/release/gui \
@@ -67,7 +60,6 @@ jobs:
           cp target/release/gui.exe dist/
           cp README.md dist/
           cp LICENSE dist/
-          Copy-Item -Recurse languages dist/languages
           Compress-Archive -Path dist/* -DestinationPath keyprint-windows-x86_64.zip
       - uses: actions/upload-artifact@v4
         with:

@@ -3,7 +3,6 @@
 // rather than printpdf's built-in Helvetica, since Helvetica is limited to
 // Windows-1252 and can't render the arrow glyphs some keycap labels use.
 
-use crate::languages::Language;
 use crate::layout_key::{BorderStyle, LayoutKey};
 use crate::metrics::FontMetrics;
 use crate::resolve::resolve_label;
@@ -34,7 +33,6 @@ const TRANSPARENT_SYMBOL: &str = "\u{25BD}";
 pub fn export(
     layout: &KeyboardLayout,
     layers: &[Vec<Vec<Option<LayoutKey>>>],
-    language: &Language,
     title: &str,
     out_path: &str,
     portrait: bool,
@@ -99,7 +97,6 @@ pub fn export(
                     key.h,
                     block_canvas_h,
                     resolved_key,
-                    language,
                 );
             }
         }
@@ -140,7 +137,6 @@ fn draw_key(
     kle_h: f32,
     canvas_h_mm: f32,
     key: Option<&LayoutKey>,
-    language: &Language,
 ) {
     let x0 = MARGIN_MM + kle_x * UNIT_MM + GAP_MM * 0.5;
     let w = kle_w * UNIT_MM - GAP_MM;
@@ -178,7 +174,7 @@ fn draw_key(
     let mid_y0 = y0 + if has_bottom_strip { STRIP_MM } else { 0.0 };
     let mid_h = h - if has_top_strip { STRIP_MM } else { 0.0 } - if has_bottom_strip { STRIP_MM } else { 0.0 };
 
-    let resolved = resolve_label(key, language);
+    let resolved = resolve_label(key);
     let max_w = w - 0.16 * UNIT_MM;
     let base_size = (mid_h * 0.46 * 2.8346).clamp(6.0, 13.0);
 

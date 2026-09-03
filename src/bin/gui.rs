@@ -9,9 +9,13 @@
 use egui_file_dialog::FileDialog;
 use qmk_via_api::scan::{scan_keyboards, KeyboardDeviceInfo};
 use std::path::PathBuf;
-use keyprint::{languages, pdf, vial::VialProtocol};
+use keyprint::{os_layout, pdf, vial::VialProtocol};
 
 fn main() -> eframe::Result<()> {
+    // macOS must snapshot the active layout on the main thread before the
+    // UI thread starts label resolution; a no-op on other platforms.
+    os_layout::init();
+
     let options = eframe::NativeOptions {
         // Fixed size rather than just an initial hint: tiling WMs (Hyprland
         // et al.) generally auto-float a window that declares it can't be
@@ -39,8 +43,6 @@ fn main() -> eframe::Result<()> {
 struct App {
     devices: Vec<KeyboardDeviceInfo>,
     selected_device: Option<usize>,
-    languages: Vec<(String, String)>, // (code, display name)
-    selected_lang: String,
     portrait: bool,
     layers_per_page: usize,
     output_path: PathBuf,
@@ -52,18 +54,10 @@ struct App {
 impl App {
     fn new() -> Self {
         let devices = scan_keyboards().unwrap_or_default();
-        let languages = languages::list_available();
-        let selected_lang = if languages.iter().any(|(c, _)| c == "en_US") {
-            "en_US".to_string()
-        } else {
-            languages.first().map(|(c, _)| c.clone()).unwrap_or_default()
-        };
 
         let mut app = Self {
             devices,
             selected_device: None,
-            languages,
-            selected_lang,
             portrait: false,
             layers_per_page: 1,
             output_path: PathBuf::from("keyboard.pdf"),
@@ -101,14 +95,6 @@ impl App {
             return;
         };
 
-        let language = match languages::load(&self.selected_lang) {
-            Ok(l) => l,
-            Err(e) => {
-                self.status = Some(Err(e.to_string()));
-                return;
-            }
-        };
-
         let result = (|| -> Result<(), Box<dyn std::error::Error>> {
             let protocol = VialProtocol::connect(dev.vendor_id, dev.product_id)?;
             let def = protocol.definition();
@@ -119,7 +105,6 @@ impl App {
             pdf::export(
                 layout,
                 &all_keys,
-                &language,
                 product_name,
                 self.output_path.to_string_lossy().as_ref(),
                 self.portrait,
@@ -176,23 +161,6 @@ impl eframe::App for App {
                 if ui.button("Rescan").clicked() {
                     self.rescan();
                 }
-            });
-
-            ui.horizontal(|ui| {
-                ui.label("Language:");
-                let selected_name = self
-                    .languages
-                    .iter()
-                    .find(|(code, _)| *code == self.selected_lang)
-                    .map(|(_, name)| name.clone())
-                    .unwrap_or_else(|| self.selected_lang.clone());
-                egui::ComboBox::from_id_salt("language")
-                    .selected_text(selected_name)
-                    .show_ui(ui, |ui| {
-                        for (code, name) in &self.languages {
-                            ui.selectable_value(&mut self.selected_lang, code.clone(), name);
-                        }
-                    });
             });
 
             ui.checkbox(&mut self.portrait, "Portrait");

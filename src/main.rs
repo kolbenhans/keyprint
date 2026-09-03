@@ -1,15 +1,14 @@
 use qmk_via_api::scan::scan_keyboards;
-use keyprint::{languages, pdf, vial::VialProtocol};
+use keyprint::{os_layout, pdf, vial::VialProtocol};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut lang_code = "en_US".to_string();
+    os_layout::init();
+
     let mut arg_index: Option<usize> = None;
     let mut portrait = false;
     let mut layers_per_page: usize = 1;
     for arg in std::env::args().skip(1) {
-        if let Some(code) = arg.strip_prefix("--lang=") {
-            lang_code = code.to_string();
-        } else if let Some(n) = arg.strip_prefix("--layers-per-page=") {
+        if let Some(n) = arg.strip_prefix("--layers-per-page=") {
             layers_per_page = n.parse().unwrap_or(1);
         } else if arg == "--portrait" {
             portrait = true;
@@ -17,17 +16,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             arg_index = Some(n);
         }
     }
-
-    let language = match languages::load(&lang_code) {
-        Ok(l) => l,
-        Err(e) => {
-            eprintln!("{e}");
-            let codes: Vec<String> = languages::list_available().into_iter().map(|(c, _)| c).collect();
-            eprintln!("Available: {}", codes.join(", "));
-            std::process::exit(1);
-        }
-    };
-    println!("Language: {} ({})", language.name, language.code);
 
     let devices = scan_keyboards()?;
     if devices.is_empty() {
@@ -72,7 +60,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let product_name = dev.product.as_deref().unwrap_or("keyboard");
         let out_path = format!("{}.pdf", product_name.replace(' ', "_"));
-        pdf::export(layout, &all_keys, &language, product_name, &out_path, portrait, layers_per_page)?;
+        pdf::export(layout, &all_keys, product_name, &out_path, portrait, layers_per_page)?;
         println!("  wrote {out_path}");
     }
 
