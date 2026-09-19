@@ -6,6 +6,17 @@ in the keyboard's real physical shape, with keycap labels translated into
 whatever keyboard layout is *active on your OS* right now (German, French,
 AZERTY, ... — read live, no language file needed).
 
+Preview GUI:
+
+<img width="521" height="293" alt="grafik" src="https://github.com/user-attachments/assets/e012ecee-2ed5-4623-9c11-edfe7817b39d" />
+
+---
+<details>
+<summary>Preview Example PDF:</summary>
+<img width="732" height="2079" alt="grafik" src="https://github.com/user-attachments/assets/2348e097-f6e8-4b7a-802f-11d246ba5972" />
+</details>
+
+
 ## Credits
 
 Built on two projects by [Stephan Rumswinkel (srwi)](https://github.com/srwi):
