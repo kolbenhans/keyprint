@@ -51,20 +51,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Build
-        run: cargo build --release
-      - name: Package zip
-        shell: pwsh
-        run: |
-          mkdir dist
-          cp target/release/keyprint.exe dist/
-          cp target/release/gui.exe dist/
-          cp README.md dist/
-          cp LICENSE dist/
-          Compress-Archive -Path dist/* -DestinationPath keyprint-windows-x86_64.zip
+        run: cargo build --release --bin gui
+      - name: Rename binary
+        run: move target/release/gui.exe keyprint-windows-x86_64.exe
       - uses: actions/upload-artifact@v4
         with:
           name: windows-release
-          path: keyprint-windows-x86_64.zip
+          path: keyprint-windows-x86_64.exe
 
   release:
     needs: [linux, windows]

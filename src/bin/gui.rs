@@ -1,3 +1,5 @@
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 // New (not from keypeek): a small one-shot "pick device, pick options,
 // export" window, built fresh with plain eframe rather than adapting
 // keypeek's settings GUI — that one drives a persistent live-overlay
