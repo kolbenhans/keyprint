@@ -222,7 +222,8 @@ pub fn get_basic_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             ..Default::default()
         }),
         Keycode::KC_NONUS_HASH => Some(LayoutKey {
-            tap: Label::new("NUHS"),
+            tap: Label::new(crate::os_layout::base_char(0x32).unwrap_or_else(|| "NUHS".to_string())),
+            shifted: crate::os_layout::shifted_char(0x32),
             ..Default::default()
         }),
         Keycode::KC_SEMICOLON => Some(LayoutKey {
@@ -433,7 +434,8 @@ pub fn get_basic_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             ..Default::default()
         }),
         Keycode::KC_NONUS_BACKSLASH => Some(LayoutKey {
-            tap: Label::new("NUBS"),
+            tap: Label::new(crate::os_layout::base_char(0x64).unwrap_or_else(|| "NUBS".to_string())),
+            shifted: crate::os_layout::shifted_char(0x64),
             ..Default::default()
         }),
         Keycode::KC_APPLICATION => Some(LayoutKey {
@@ -2237,11 +2239,11 @@ pub fn get_basic_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             ..Default::default()
         }),
         Keycode::QK_UNDERGLOW_SPEED_UP => Some(LayoutKey {
-            tap: Label::new("Effect Speed+"),
+            tap: Label::with_short("Speed +", "Spd+"),
             ..Default::default()
         }),
         Keycode::QK_UNDERGLOW_SPEED_DOWN => Some(LayoutKey {
-            tap: Label::new("Effect Speed-"),
+            tap: Label::with_short("Speed -", "Spd-"),
             ..Default::default()
         }),
         Keycode::RGB_MODE_PLAIN => Some(LayoutKey {

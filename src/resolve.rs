@@ -1,30 +1,22 @@
-// Trimmed from keypeek's overlay_window/ui_overlay.rs (generate_tap_galleys /
-// resolve_combo) — reproduces "Single" legend mode for a static print instead
-// of a live overlay: no shift/altgr-held branches (nothing is being held),
-// no Dual-mode stacking, no icon-font symbol handling (dropped upstream in
-// layout_key.rs/keycodes/basic.rs already).
-//
-// Translation now comes from keypeek's os_layout module (the OS's *active*
-// keyboard layout, queried live) instead of a static per-language JSON
-// table — same seam fields (base_keycode/shift_base/altgr_base/
-// shift_altgr_base) the keycodes/*.rs builders already attach to a
-// LayoutKey, just resolved against a different backend.
-
 use crate::layout_key::LayoutKey;
 use crate::os_layout;
 
-/// Main label text plus an optional shorter fallback for when `full` doesn't
-/// fit the keycap box.
 pub struct ResolvedLabel {
     pub full: String,
     pub short: Option<String>,
 }
 
-/// Final single-line label for a key under the OS's active keyboard layout,
-/// mirroring keypeek's "Single" legend mode: a key programmed as e.g.
-/// `S(KC_8)` resolves straight to "(" on a German layout, a plain `KC_Y`
-/// resolves to "Z" (physical position swap), anything the OS query can't
-/// answer (unsupported platform, no session) falls back to the raw US label.
+/// HID usages 0x04..=0x1D are A-Z.
+fn is_letter(usage: u16) -> bool {
+    (0x04..=0x1D).contains(&usage)
+}
+
+/// Ported from keypeek's `apply_os_overrides`: only letters/`shifted` keys trust the OS query.
+fn os_override_allowed(kc: u16) -> bool {
+    is_letter(kc)
+        || crate::keycodes::keycode_label::get_layout_key(kc).is_some_and(|k| k.shifted.is_some())
+}
+
 pub fn resolve_label(key: &LayoutKey) -> ResolvedLabel {
     let combo_keycode = key.shift_altgr_base.or(key.shift_base).or(key.altgr_base);
 
@@ -37,7 +29,8 @@ pub fn resolve_label(key: &LayoutKey) -> ResolvedLabel {
 
     let tap_full = key
         .base_keycode
-        .and_then(os_layout::base_char)
+        .filter(|&kc| is_letter(kc) || key.shifted.is_some())
+        .and_then(|kc| os_layout::base_char(kc).map(|s| if is_letter(kc) { s.to_uppercase() } else { s }))
         .unwrap_or_else(|| {
             if combo_keycode.is_some() {
                 raw_base_label()
@@ -47,8 +40,7 @@ pub fn resolve_label(key: &LayoutKey) -> ResolvedLabel {
         });
 
     match resolve_combo(key) {
-        // A resolved combo (e.g. "(" for S(KC_8)) is always a single
-        // character — no shorter fallback needed.
+        // Resolved combo is always a single char — no shorter fallback needed.
         Some(ch) => ResolvedLabel {
             full: ch,
             short: None,
@@ -61,11 +53,17 @@ pub fn resolve_label(key: &LayoutKey) -> ResolvedLabel {
 }
 
 fn resolve_combo(key: &LayoutKey) -> Option<String> {
-    let shift_altgr_resolved = key.shift_altgr_base.and_then(os_layout::ralt_shifted_char);
-    let altgr_resolved = key.altgr_base.and_then(os_layout::ralt_char);
+    let shift_altgr_resolved = key
+        .shift_altgr_base
+        .filter(|&kc| os_override_allowed(kc))
+        .and_then(os_layout::ralt_shifted_char);
+    let altgr_resolved = key
+        .altgr_base
+        .filter(|&kc| os_override_allowed(kc))
+        .and_then(os_layout::ralt_char);
     let shift_resolved = key.shift_base.and_then(|kc| {
-        os_layout::shifted_char(kc)
-            .or_else(|| crate::keycodes::keycode_label::get_layout_key(kc).and_then(|k| k.shifted))
+        let os_result = os_override_allowed(kc).then(|| os_layout::shifted_char(kc)).flatten();
+        os_result.or_else(|| crate::keycodes::keycode_label::get_layout_key(kc).and_then(|k| k.shifted))
     });
     shift_altgr_resolved.or(altgr_resolved).or(shift_resolved)
 }
@@ -74,16 +72,11 @@ fn resolve_combo(key: &LayoutKey) -> Option<String> {
 mod tests {
     use super::*;
 
-    /// S(A(KC_E)) -> Shift+AltGr+E should resolve to the layout's Shift+AltGr
-    /// combo (e.g. Polish "Ę"), not fall through to plain "E" or get misfiled
-    /// as lone-shift/lone-altgr. Needs a live session on a layout that
-    /// defines a Shift+AltGr combo on E, so it's not part of the normal
-    /// `cargo test` run — see keypeek's os_layout tests for the same pattern.
+    /// S(A(KC_E)) -> Shift+AltGr+E should resolve via the OS layout (e.g. Polish "Ę"). Needs a live session.
     #[test]
     #[ignore]
     fn shift_altgr_combo_resolves_via_os_layout() {
-        // (mod_mask=LSFT|LALT|RIGHT_FLAG=0x16) << 8 | KC_E(0x08). QK_MODS's
-        // bits 8-12 *are* the mod flags (LCTL=bit8) — no separate marker.
+        // mod_mask=LSFT|LALT|RIGHT_FLAG=0x16, shifted into bits 8-12, | KC_E(0x08).
         let shift_altgr_e: u16 = (0x16 << 8) | 0x08;
         let key = crate::keycodes::keycode_label::get_layout_key(shift_altgr_e)
             .expect("mod-combo keycode should resolve to a LayoutKey");
