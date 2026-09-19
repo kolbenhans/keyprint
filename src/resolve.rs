@@ -52,6 +52,32 @@ pub fn resolve_label(key: &LayoutKey) -> ResolvedLabel {
     }
 }
 
+/// Second/third character for the optional shift/AltGr keycap corners.
+/// `None` for keys that already resolve to a single combo character (S(KC_x)
+/// etc.) — those show their result as the main label, a corner would just
+/// repeat it.
+fn is_combo_key(key: &LayoutKey) -> bool {
+    key.shift_base.is_some() || key.altgr_base.is_some() || key.shift_altgr_base.is_some()
+}
+
+pub fn resolve_shifted_corner(key: &LayoutKey) -> Option<String> {
+    // A letter's shifted form is just its own uppercase — no info a corner
+    // adds, so plain A-Z keys get no shift corner at all.
+    if is_combo_key(key) || key.base_keycode.is_some_and(is_letter) {
+        return None;
+    }
+    key.base_keycode
+        .and_then(os_layout::shifted_char)
+        .or_else(|| key.shifted.clone())
+}
+
+pub fn resolve_altgr_corner(key: &LayoutKey) -> Option<String> {
+    if is_combo_key(key) {
+        return None;
+    }
+    key.base_keycode.and_then(os_layout::ralt_char)
+}
+
 fn resolve_combo(key: &LayoutKey) -> Option<String> {
     let shift_altgr_resolved = key
         .shift_altgr_base
@@ -71,6 +97,42 @@ fn resolve_combo(key: &LayoutKey) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::layout_key::LayoutKey;
+
+    /// 0xFFFF is out of range for every platform's HID->keycode table, so
+    /// `os_layout` always returns `None` for it regardless of the live
+    /// session — keeping this test deterministic.
+    #[test]
+    fn shifted_corner_falls_back_to_static_table() {
+        let key = LayoutKey {
+            base_keycode: Some(0xFFFF),
+            shifted: Some("!".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(resolve_shifted_corner(&key), Some("!".to_string()));
+    }
+
+    #[test]
+    fn shifted_corner_is_none_for_letters() {
+        // HID usage 0x04 = KC_A.
+        let key = LayoutKey {
+            base_keycode: Some(0x04),
+            ..Default::default()
+        };
+        assert_eq!(resolve_shifted_corner(&key), None);
+    }
+
+    #[test]
+    fn corners_are_none_for_explicit_combo_keys() {
+        let key = LayoutKey {
+            base_keycode: Some(0xFFFF),
+            shifted: Some("!".to_string()),
+            shift_base: Some(0x1e),
+            ..Default::default()
+        };
+        assert_eq!(resolve_shifted_corner(&key), None);
+        assert_eq!(resolve_altgr_corner(&key), None);
+    }
 
     /// S(A(KC_E)) -> Shift+AltGr+E should resolve via the OS layout (e.g. Polish "Ę"). Needs a live session.
     #[test]

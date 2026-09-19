@@ -42,12 +42,20 @@ fn main() -> eframe::Result<()> {
     )
 }
 
+fn color32_to_rgb(c: egui::Color32) -> (f32, f32, f32) {
+    (c.r() as f32 / 255.0, c.g() as f32 / 255.0, c.b() as f32 / 255.0)
+}
+
 struct App {
     devices: Vec<KeyboardDeviceInfo>,
     selected_device: Option<usize>,
     portrait: bool,
     center_vertically: bool,
     layers_per_page: usize,
+    show_shifted: bool,
+    show_altgr: bool,
+    shift_color: egui::Color32,
+    altgr_color: egui::Color32,
     output_path: PathBuf,
     output_path_is_custom: bool,
     file_dialog: FileDialog,
@@ -68,6 +76,10 @@ impl App {
             portrait: false,
             center_vertically: false,
             layers_per_page: 1,
+            show_shifted: false,
+            show_altgr: false,
+            shift_color: egui::Color32::from_rgb(0, 0, 200),
+            altgr_color: egui::Color32::from_rgb(200, 0, 0),
             output_path: PathBuf::from("keyboard.pdf"),
             output_path_is_custom: false,
             file_dialog: FileDialog::new(),
@@ -128,6 +140,12 @@ impl App {
                 self.portrait,
                 self.layers_per_page,
                 self.center_vertically,
+                pdf::LegendOptions {
+                    show_shifted: self.show_shifted,
+                    show_altgr: self.show_altgr,
+                    shift_color: color32_to_rgb(self.shift_color),
+                    altgr_color: color32_to_rgb(self.altgr_color),
+                },
             )?;
             Ok(())
         })();
@@ -213,6 +231,19 @@ impl App {
             ui.horizontal(|ui| {
                 ui.label("Layers per page:");
                 ui.add(egui::DragValue::new(&mut self.layers_per_page).range(1..=8));
+            });
+
+            ui.horizontal(|ui| {
+                ui.checkbox(&mut self.show_shifted, "Show shifted char");
+                ui.add_enabled_ui(self.show_shifted, |ui| {
+                    egui::color_picker::color_edit_button_srgba(ui, &mut self.shift_color, egui::color_picker::Alpha::Opaque);
+                });
+            });
+            ui.horizontal(|ui| {
+                ui.checkbox(&mut self.show_altgr, "Show RAlt char");
+                ui.add_enabled_ui(self.show_altgr, |ui| {
+                    egui::color_picker::color_edit_button_srgba(ui, &mut self.altgr_color, egui::color_picker::Alpha::Opaque);
+                });
             });
 
             ui.add_space(8.0);

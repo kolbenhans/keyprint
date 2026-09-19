@@ -5,7 +5,7 @@
 
 use crate::layout_key::{BorderStyle, LayoutKey};
 use crate::metrics::FontMetrics;
-use crate::resolve::resolve_label;
+use crate::resolve::{resolve_altgr_corner, resolve_label, resolve_shifted_corner};
 use crate::types::{EncoderTile, KeyboardLayout};
 use printpdf::path::PaintMode;
 use printpdf::*;
@@ -73,6 +73,30 @@ pub fn page_metrics(
     PageMetrics { page_w, page_h, content_w, content_h, block_h, scale, x_offset, y_offset }
 }
 const STRIP_MM: f32 = 3.2; // height of the behavior/argument legend strips
+const CORNER_MM: f32 = 6.0; // height of the optional shift/AltGr corner labels
+const CORNER_INSET_MM: f32 = 0.5;
+
+/// Optional extra legends drawn in a key's top corners: the character typed
+/// with Shift (top-right) and with AltGr (top-left), for keys that don't
+/// otherwise show one. Off by default so plain export behavior is unchanged.
+#[derive(Clone, Copy)]
+pub struct LegendOptions {
+    pub show_shifted: bool,
+    pub show_altgr: bool,
+    pub shift_color: (f32, f32, f32),
+    pub altgr_color: (f32, f32, f32),
+}
+
+impl Default for LegendOptions {
+    fn default() -> Self {
+        LegendOptions {
+            show_shifted: false,
+            show_altgr: false,
+            shift_color: (0.0, 0.0, 0.8),
+            altgr_color: (0.8, 0.0, 0.0),
+        }
+    }
+}
 // Bundled at compile time (see fonts/LICENSE — Bitstream Vera style,
 // redistribution permitted) so the binary needs no system font installed
 // and needs nothing external at runtime: same font on Linux/Windows/macOS.
@@ -94,6 +118,7 @@ pub fn export(
     portrait: bool,
     layers_per_page: usize,
     center_vertically: bool,
+    legend: LegendOptions,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let layers_per_page = layers_per_page.max(1);
     let metrics = FontMetrics::new(DEJAVU_SANS)?;
@@ -136,7 +161,7 @@ pub fn export(
             // above it.
             let block_canvas_h = canvas_h - (i as f32) * block_h;
 
-            draw_header(&page_layer, &font, title, layer_idx, block_canvas_h);
+            draw_header(&page_layer, &font, &metrics, title, layer_idx, block_canvas_h, legend);
 
             for key in &layout.keys {
                 let resolved_key = layer_keys
@@ -154,6 +179,7 @@ pub fn export(
                     key.h,
                     block_canvas_h,
                     resolved_key,
+                    legend,
                 );
             }
 
@@ -176,21 +202,42 @@ pub fn export(
 fn draw_header(
     page_layer: &PdfLayerReference,
     font: &IndirectFontRef,
+    metrics: &FontMetrics,
     title: &str,
     layer_idx: usize,
     canvas_h: f32,
+    legend: LegendOptions,
 ) {
     page_layer.set_fill_color(Color::Rgb(Rgb::new(0.0, 0.0, 0.0, None)));
     // Baseline sits far enough below the margin line that the text's cap
     // height doesn't poke back up past it.
     let cap_height_mm = HEADER_FONT_PT * 0.72 * 0.3527778;
-    page_layer.use_text(
-        format!("{title} — Layer {layer_idx}"),
-        HEADER_FONT_PT,
-        Mm(MARGIN_MM),
-        Mm(canvas_h - MARGIN_MM - cap_height_mm),
-        font,
-    );
+    let title_text = format!("{title} — Layer {layer_idx}");
+    let baseline_y = canvas_h - MARGIN_MM - cap_height_mm;
+    page_layer.use_text(&title_text, HEADER_FONT_PT, Mm(MARGIN_MM), Mm(baseline_y), font);
+
+    if !legend.show_shifted && !legend.show_altgr {
+        return;
+    }
+    // Color key for the corner legends, tacked onto the header line in the
+    // same colors as the corners themselves — no separate swatch needed,
+    // the colored word already says which is which.
+    let legend_size = HEADER_FONT_PT * 0.6;
+    let legend_baseline = canvas_h - MARGIN_MM - legend_size * 0.72 * 0.3527778;
+    let mut x = MARGIN_MM + metrics.width_mm(&title_text, HEADER_FONT_PT) + 8.0;
+    let mut draw_legend_item = |text: &str, color: (f32, f32, f32)| {
+        let (r, g, b) = color;
+        page_layer.set_fill_color(Color::Rgb(Rgb::new(r, g, b, None)));
+        page_layer.use_text(text, legend_size, Mm(x), Mm(legend_baseline), font);
+        x += metrics.width_mm(text, legend_size) + 6.0;
+    };
+    if legend.show_shifted {
+        draw_legend_item("= Shift", legend.shift_color);
+    }
+    if legend.show_altgr {
+        draw_legend_item("= RAlt", legend.altgr_color);
+    }
+    page_layer.set_fill_color(Color::Rgb(Rgb::new(0.0, 0.0, 0.0, None)));
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -204,6 +251,7 @@ fn draw_key(
     kle_h: f32,
     canvas_h_mm: f32,
     key: Option<&LayoutKey>,
+    legend: LegendOptions,
 ) {
     let x0 = MARGIN_MM + kle_x * UNIT_MM + GAP_MM * 0.5;
     let w = kle_w * UNIT_MM - GAP_MM;
@@ -227,15 +275,24 @@ fn draw_key(
     };
 
     let has_top_strip = key.behavior.is_some();
-    let has_bottom_strip = key.argument.is_some();
+    // A key resolved via an explicit S(KC_x)/A(KC_x) combo already shows the
+    // resolved character as its main label, so its "Sft"/"AGr" argument is
+    // redundant once that same information is on display via the corners —
+    // but only while the matching toggle is actually on.
+    let suppress_combo_legend = (legend.show_shifted && key.shift_base.is_some())
+        || (legend.show_altgr && key.altgr_base.is_some())
+        || (legend.show_shifted && legend.show_altgr && key.shift_altgr_base.is_some());
+    let has_bottom_strip = key.argument.is_some() && !suppress_combo_legend;
 
     if let Some(behavior) = &key.behavior {
         let text = behavior.short.as_deref().unwrap_or(&behavior.full);
         draw_strip_text(page_layer, font, metrics, text, x0, y0 + h - STRIP_MM, w, STRIP_MM);
     }
-    if let Some(argument) = &key.argument {
-        let text = argument.short.as_deref().unwrap_or(&argument.full);
-        draw_strip_text(page_layer, font, metrics, text, x0, y0, w, STRIP_MM);
+    if has_bottom_strip {
+        if let Some(argument) = &key.argument {
+            let text = argument.short.as_deref().unwrap_or(&argument.full);
+            draw_strip_text(page_layer, font, metrics, text, x0, y0, w, STRIP_MM);
+        }
     }
 
     let mid_y0 = y0 + if has_bottom_strip { STRIP_MM } else { 0.0 };
@@ -253,6 +310,52 @@ fn draw_key(
     }
 
     draw_centered(page_layer, font, metrics, text, x0, mid_y0, w, mid_h, size);
+
+    // Shift/AltGr corners: skipped when the top strip is already showing a
+    // behavior legend (MT etc.) — it spans the full width, so both corners
+    // are already covered.
+    if !has_top_strip {
+        let corner_top = mid_y0 + mid_h;
+        // Corner labels target 90% of the main label's own font size, so
+        // they scale down along with it on cramped keycaps instead of
+        // staying a fixed size that no longer fits.
+        let corner_target_size = size * 0.9;
+        if legend.show_altgr {
+            if let Some(text) = resolve_altgr_corner(key) {
+                draw_corner_text(page_layer, font, metrics, &text, x0, corner_top, w, false, corner_target_size, legend.altgr_color);
+            }
+        }
+        if legend.show_shifted {
+            if let Some(text) = resolve_shifted_corner(key) {
+                draw_corner_text(page_layer, font, metrics, &text, x0, corner_top, w, true, corner_target_size, legend.shift_color);
+            }
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_corner_text(
+    page_layer: &PdfLayerReference,
+    font: &IndirectFontRef,
+    metrics: &FontMetrics,
+    text: &str,
+    x0: f32,
+    top_y: f32,
+    key_w: f32,
+    align_right: bool,
+    target_size: f32,
+    color: (f32, f32, f32),
+) {
+    let box_w = key_w * 0.46;
+    let mut size = target_size;
+    while size > 4.5 && metrics.width_mm(text, size) > box_w {
+        size -= 0.5;
+    }
+    let box_x = if align_right { x0 + key_w - box_w - CORNER_INSET_MM } else { x0 + CORNER_INSET_MM };
+    let (r, g, b) = color;
+    page_layer.set_fill_color(Color::Rgb(Rgb::new(r, g, b, None)));
+    draw_centered(page_layer, font, metrics, text, box_x, top_y - CORNER_MM, box_w, CORNER_MM, size);
+    page_layer.set_fill_color(Color::Rgb(Rgb::new(0.0, 0.0, 0.0, None)));
 }
 
 #[allow(clippy::too_many_arguments)]

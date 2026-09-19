@@ -25,8 +25,8 @@ pub mod modifier_symbols {
     };
 
     pub const MOD_ALTGR: ModName = ModName {
-        full: "AltGr",
-        short: "AGr",
+        full: "RAlt",
+        short: "RAlt",
     };
 
     pub const MOD_GUI: ModName = ModName {

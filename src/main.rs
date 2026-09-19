@@ -73,6 +73,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             portrait,
             layers_per_page,
             center_vertically,
+            pdf::LegendOptions::default(),
         )?;
         println!("  wrote {out_path}");
     }
