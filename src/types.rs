@@ -53,6 +53,10 @@ impl KeyboardLayout {
             .fold(0.0, f32::max);
         (max_x, max_y)
     }
+
+    pub fn encoder_count(&self) -> usize {
+        self.encoders.iter().map(|e| e.id as usize + 1).max().unwrap_or(0)
+    }
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]

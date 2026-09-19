@@ -101,10 +101,12 @@ impl App {
             let layout = &def.layouts[0];
             let layer_count = protocol.get_layer_count()?;
             let all_keys = protocol.read_all_keys(layer_count, def.rows, def.cols);
+            let all_encoders = protocol.read_all_encoders(layer_count, layout.encoder_count());
             let product_name = dev.product.as_deref().unwrap_or("keyboard");
             pdf::export(
                 layout,
                 &all_keys,
+                &all_encoders,
                 product_name,
                 self.output_path.to_string_lossy().as_ref(),
                 self.portrait,

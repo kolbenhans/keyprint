@@ -16,6 +16,7 @@ enum VialCommand {
     KeyboardId = 0x00,
     Size = 0x01,
     Def = 0x02,
+    GetEncoder = 0x03,
 }
 
 pub struct VialProtocol {
@@ -93,6 +94,29 @@ impl VialProtocol {
         }
 
         keys
+    }
+
+    pub fn read_all_encoders(
+        &self,
+        layers: usize,
+        encoder_count: usize,
+    ) -> Vec<Vec<(Option<LayoutKey>, Option<LayoutKey>)>> {
+        (0..layers)
+            .map(|layer| {
+                (0..encoder_count)
+                    .map(|id| {
+                        let Ok(response) =
+                            Self::vial_command(&self.api, VialCommand::GetEncoder, &[layer as u8, id as u8])
+                        else {
+                            return (None, None);
+                        };
+                        let ccw = u16::from_be_bytes([response[0], response[1]]);
+                        let cw = u16::from_be_bytes([response[2], response[3]]);
+                        (get_layout_key(ccw), get_layout_key(cw))
+                    })
+                    .collect()
+            })
+            .collect()
     }
 
     fn vial_command(

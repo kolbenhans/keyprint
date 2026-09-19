@@ -6,7 +6,7 @@
 use crate::layout_key::{BorderStyle, LayoutKey};
 use crate::metrics::FontMetrics;
 use crate::resolve::resolve_label;
-use crate::types::KeyboardLayout;
+use crate::types::{EncoderTile, KeyboardLayout};
 use printpdf::path::PaintMode;
 use printpdf::*;
 use std::fs::File;
@@ -28,11 +28,15 @@ const DEJAVU_SANS: &[u8] = include_bytes!("../fonts/DejaVuSans.ttf");
 /// Symbol for a transparent key (falls through to the layer below), same
 /// idea as Vial's hollow down-pointing triangle.
 const TRANSPARENT_SYMBOL: &str = "\u{25BD}";
+/// Rotation direction icons for encoder tiles.
+const ROTATE_CW: &str = "\u{21BB}";
+const ROTATE_CCW: &str = "\u{21BA}";
 
 #[allow(clippy::too_many_arguments)]
 pub fn export(
     layout: &KeyboardLayout,
     layers: &[Vec<Vec<Option<LayoutKey>>>],
+    encoders: &[Vec<(Option<LayoutKey>, Option<LayoutKey>)>],
     title: &str,
     out_path: &str,
     portrait: bool,
@@ -98,6 +102,16 @@ pub fn export(
                     block_canvas_h,
                     resolved_key,
                 );
+            }
+
+            for tile in &layout.encoders {
+                let resolved_key = encoders
+                    .get(layer_idx)
+                    .and_then(|layer_encoders| layer_encoders.get(tile.id as usize))
+                    .map(|(ccw, cw)| if tile.clockwise { cw } else { ccw })
+                    .and_then(|k| k.as_ref());
+
+                draw_encoder(&page_layer, &font, &metrics, tile, block_canvas_h, resolved_key);
             }
         }
     }
@@ -180,6 +194,51 @@ fn draw_key(
 
     // Prefer the full label; fall back to the short form, then shrink font
     // size, so long legends (e.g. "Page Up") never spill past their keycap.
+    let (text, mut size) = pick_fitting(metrics, &resolved.full, resolved.short.as_deref(), max_w, base_size);
+    while size > 4.0 && metrics.width_mm(text, size) > max_w {
+        size -= 0.5;
+    }
+
+    draw_centered(page_layer, font, metrics, text, x0, mid_y0, w, mid_h, size);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_encoder(
+    page_layer: &PdfLayerReference,
+    font: &IndirectFontRef,
+    metrics: &FontMetrics,
+    tile: &EncoderTile,
+    canvas_h_mm: f32,
+    key: Option<&LayoutKey>,
+) {
+    let x0 = MARGIN_MM + tile.x * UNIT_MM + GAP_MM * 0.5;
+    let w = tile.w * UNIT_MM - GAP_MM;
+    let h = tile.h * UNIT_MM - GAP_MM;
+    let top_y_mm = canvas_h_mm - MARGIN_MM - HEADER_MM - tile.y * UNIT_MM - GAP_MM * 0.5;
+    let y0 = top_y_mm - h;
+
+    page_layer.set_fill_color(Color::Rgb(Rgb::new(0.95, 0.95, 0.95, None)));
+    draw_border(page_layer, key.map(|k| k.border).unwrap_or(BorderStyle::None));
+    let rect = Rect::new(Mm(x0), Mm(y0), Mm(x0 + w), Mm(y0 + h)).with_mode(PaintMode::FillStroke);
+    page_layer.add_rect(rect);
+    page_layer.set_line_dash_pattern(LineDashPattern::default());
+
+    page_layer.set_fill_color(Color::Rgb(Rgb::new(0.0, 0.0, 0.0, None)));
+
+    let arrow = if tile.clockwise { ROTATE_CW } else { ROTATE_CCW };
+    draw_strip_text(page_layer, font, metrics, arrow, x0, y0 + h - STRIP_MM, w, STRIP_MM);
+
+    let mid_y0 = y0;
+    let mid_h = h - STRIP_MM;
+
+    let Some(key) = key else {
+        draw_centered(page_layer, font, metrics, TRANSPARENT_SYMBOL, x0, mid_y0, w, mid_h, 9.0);
+        return;
+    };
+
+    let resolved = resolve_label(key);
+    let max_w = w - 0.16 * UNIT_MM;
+    let base_size = (mid_h * 0.46 * 2.8346).clamp(6.0, 13.0);
     let (text, mut size) = pick_fitting(metrics, &resolved.full, resolved.short.as_deref(), max_w, base_size);
     while size > 4.0 && metrics.width_mm(text, size) > max_w {
         size -= 0.5;

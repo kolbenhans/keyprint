@@ -57,10 +57,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  layers: {layer_count}, rows: {}, cols: {}", def.rows, def.cols);
 
         let all_keys = protocol.read_all_keys(layer_count, def.rows, def.cols);
+        let all_encoders = protocol.read_all_encoders(layer_count, layout.encoder_count());
 
         let product_name = dev.product.as_deref().unwrap_or("keyboard");
         let out_path = format!("{}.pdf", product_name.replace(' ', "_"));
-        pdf::export(layout, &all_keys, product_name, &out_path, portrait, layers_per_page)?;
+        pdf::export(
+            layout,
+            &all_keys,
+            &all_encoders,
+            product_name,
+            &out_path,
+            portrait,
+            layers_per_page,
+        )?;
         println!("  wrote {out_path}");
     }
 
