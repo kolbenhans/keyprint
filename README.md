@@ -10,12 +10,13 @@ fit — never a custom oddly-sized page.
 
 Preview GUI:
 
-<img width="521" height="293" alt="grafik" src="https://github.com/user-attachments/assets/e012ecee-2ed5-4623-9c11-edfe7817b39d" />
+<img width="526" height="304" alt="grafik" src="https://github.com/user-attachments/assets/6f26f284-b491-4007-a413-a1cbfe0d6a7a" />
+
 
 ---
 <details>
 <summary>Preview Example PDF:</summary>
-<img width="732" height="2079" alt="grafik" src="https://github.com/user-attachments/assets/2348e097-f6e8-4b7a-802f-11d246ba5972" />
+<img width="695" height="981" alt="grafik" src="https://github.com/user-attachments/assets/c96a05fd-23e7-4d84-9353-e1597b242ae6" />
 </details>
 
 
