@@ -6,12 +6,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut arg_index: Option<usize> = None;
     let mut portrait = false;
+    let mut center_vertically = false;
     let mut layers_per_page: usize = 1;
     for arg in std::env::args().skip(1) {
         if let Some(n) = arg.strip_prefix("--layers-per-page=") {
             layers_per_page = n.parse().unwrap_or(1);
         } else if arg == "--portrait" {
             portrait = true;
+        } else if arg == "--center" {
+            center_vertically = true;
         } else if let Ok(n) = arg.parse::<usize>() {
             arg_index = Some(n);
         }
@@ -69,6 +72,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &out_path,
             portrait,
             layers_per_page,
+            center_vertically,
         )?;
         println!("  wrote {out_path}");
     }

@@ -12,14 +12,66 @@ use printpdf::*;
 use std::fs::File;
 use std::io::{BufWriter, Cursor};
 
-const UNIT_MM: f32 = 19.0; // one KLE unit ~ one physical keycap (19mm pitch)
+pub const UNIT_MM: f32 = 19.0; // one KLE unit ~ one physical keycap (19mm pitch)
 // Real printers can't mark the outermost few mm of a page — this needs to
 // clear that unprintable border with room to spare, not just look OK in a
 // PDF viewer.
-const MARGIN_MM: f32 = 15.0;
-const GAP_MM: f32 = 1.5; // visual gap between adjacent keycaps
+pub const MARGIN_MM: f32 = 15.0;
+pub const GAP_MM: f32 = 1.5; // visual gap between adjacent keycaps
 const HEADER_FONT_PT: f32 = 14.0;
-const HEADER_MM: f32 = 12.0; // vertical space reserved for the header line
+pub const HEADER_MM: f32 = 12.0; // vertical space reserved for the header line
+
+pub const A4_SHORT_MM: f32 = 210.0;
+pub const A4_LONG_MM: f32 = 297.0;
+
+/// Page/content dimensions in mm, shared with the GUI's page-1 layout preview
+/// so it matches the real PDF exactly. The page is a fixed A4 sheet; the
+/// keyboard layout always stays in its natural horizontal orientation and is
+/// uniformly scaled to fill the page, horizontally centered and either
+/// top-aligned or vertically centered. `--portrait` only picks the page's
+/// orientation -- rotating the layout along with the page would cancel out
+/// and always print the same result, so the layout itself never rotates.
+pub struct PageMetrics {
+    pub page_w: f32,
+    pub page_h: f32,
+    /// Content's natural (unscaled) size.
+    pub content_w: f32,
+    pub content_h: f32,
+    pub block_h: f32,
+    /// Uniform scale applied to content coordinates to fill the page.
+    pub scale: f32,
+    pub x_offset: f32,
+    pub y_offset: f32,
+}
+
+/// Maps a point from content space into final page space: scale, then offset.
+pub fn transform_point(x: f32, y: f32, m: &PageMetrics) -> (f32, f32) {
+    (m.scale * x + m.x_offset, m.scale * y + m.y_offset)
+}
+
+pub fn page_metrics(
+    layout: &KeyboardLayout,
+    layers_per_page: usize,
+    portrait: bool,
+    center_vertically: bool,
+) -> PageMetrics {
+    let layers_per_page = layers_per_page.max(1);
+    let (dim_x, dim_y) = layout.get_dimensions();
+    let block_h = HEADER_MM + dim_y * UNIT_MM;
+    let content_w = MARGIN_MM * 2.0 + dim_x * UNIT_MM;
+    let content_h = MARGIN_MM * 2.0 + (layers_per_page as f32) * block_h;
+
+    let (page_w, page_h) = if portrait { (A4_SHORT_MM, A4_LONG_MM) } else { (A4_LONG_MM, A4_SHORT_MM) };
+    let scale = (page_w / content_w).min(page_h / content_h);
+    let x_offset = (page_w - scale * content_w) * 0.5;
+    let y_offset = if center_vertically {
+        (page_h - scale * content_h) * 0.5
+    } else {
+        page_h - scale * content_h
+    };
+
+    PageMetrics { page_w, page_h, content_w, content_h, block_h, scale, x_offset, y_offset }
+}
 const STRIP_MM: f32 = 3.2; // height of the behavior/argument legend strips
 // Bundled at compile time (see fonts/LICENSE — Bitstream Vera style,
 // redistribution permitted) so the binary needs no system font installed
@@ -41,19 +93,16 @@ pub fn export(
     out_path: &str,
     portrait: bool,
     layers_per_page: usize,
+    center_vertically: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let layers_per_page = layers_per_page.max(1);
     let metrics = FontMetrics::new(DEJAVU_SANS)?;
 
-    let (dim_x, dim_y) = layout.get_dimensions();
-    let block_h = HEADER_MM + dim_y * UNIT_MM; // one layer's header + keycap grid
-
-    // The keyboard is always laid out and measured in its natural (wide)
-    // orientation; `--portrait` rotates the finished canvas onto a tall
-    // page via the page's CTM rather than re-deriving every coordinate.
-    let canvas_w = MARGIN_MM * 2.0 + dim_x * UNIT_MM;
-    let canvas_h = MARGIN_MM * 2.0 + (layers_per_page as f32) * block_h;
-    let (page_w, page_h) = if portrait { (canvas_h, canvas_w) } else { (canvas_w, canvas_h) };
+    // The layout always stays in its natural horizontal orientation;
+    // `--portrait` only picks the page's orientation (see PageMetrics), and
+    // the content is scaled + offset onto it via the CTM below.
+    let m = page_metrics(layout, layers_per_page, portrait, center_vertically);
+    let (page_w, page_h, block_h, canvas_h) = (m.page_w, m.page_h, m.block_h, m.content_h);
 
     let (doc, page1, layer1) = PdfDocument::new(title, Mm(page_w), Mm(page_h), "Page 1");
     let font = doc.add_external_font(Cursor::new(DEJAVU_SANS))?;
@@ -67,12 +116,16 @@ pub fn export(
             doc.get_page(page).get_layer(pdf_layer)
         };
 
-        if portrait {
-            // Turning the printed (portrait) page 90° clockwise should show
-            // the keyboard upright in its natural wide orientation — so
-            // rotate the whole canvas 90° counter-clockwise into the page.
-            page_layer.set_ctm(CurTransMat::TranslateRotate(Mm(canvas_h).into(), Mm(0.0).into(), 90.0));
-        }
+        // Raw matrix: PDF's `cm` operator wants its translation in points, not mm.
+        let to_pt = |v_mm: f32| Pt::from(Mm(v_mm)).0;
+        page_layer.set_ctm(CurTransMat::Raw([
+            m.scale,
+            0.0,
+            0.0,
+            m.scale,
+            to_pt(m.x_offset),
+            to_pt(m.y_offset),
+        ]));
 
         for (i, layer_keys) in chunk.iter().enumerate() {
             let layer_idx = page_idx * layers_per_page + i;
